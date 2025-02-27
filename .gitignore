@@ -2,6 +2,7 @@
 .gigacode
 .gigaide
 config.py
+sklearn-env
 
 
 # Byte-compiled / optimized / DLL files

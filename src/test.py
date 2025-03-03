@@ -1,0 +1,61 @@
+from datetime import datetime, timedelta
+import logging
+from data import DataFetcher, DataProcessor
+from services import InstrumentsService, MarketDataService, TinkoffService
+from utils.config import SANDBOX_TOKEN
+from utils.time import now, prepare_date
+
+
+def setup_logger():
+    """
+    Настройка логгера с кодировкой UTF-8.
+    """
+    # Создаем логгер
+    logger = logging.getLogger("neuro")
+    logger.setLevel(logging.DEBUG)
+
+    # Формат логов
+    formatter = logging.Formatter("[%(asctime)s] [%(levelname)s] %(message)s")
+
+    # Логирование в консоль
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+
+    # Логирование в файл с кодировкой UTF-8
+    log_filename = f"./output/logs/neuro_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    file_handler = logging.FileHandler(log_filename, encoding='utf-8')  # Указываем кодировку UTF-8
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+
+    return logger
+
+
+
+log = setup_logger()
+
+TService = TinkoffService(token=SANDBOX_TOKEN, is_sandbox=True)
+
+instrumentsService = InstrumentsService(TService)
+marketDataService = MarketDataService(TService)
+
+
+response = instrumentsService.find_instrument('RU000A107UL4')
+tbank_instrument = response.get('instruments')[0]
+
+response = instrumentsService.find_instrument('IMOEXF Индекс МосБиржи')
+moex = response.get('instruments')[0]
+
+processor = DataProcessor()
+fetcher = DataFetcher(TService=TService, processor=processor)
+
+data = fetcher.get_data(
+    instrument=tbank_instrument,
+    from_date=now() - timedelta(days=365),
+    to_date=now(),
+    additive_instruments=[
+        moex
+    ]
+)
+
+processor.save_to_json(data, './output/data/test_data.json')

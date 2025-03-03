@@ -2,7 +2,7 @@ import json
 
 import requests
 
-from utils.time import now, now_str
+from utils.time import now, now_str, prepare_date
 
 
 class MarketDataService:
@@ -113,8 +113,8 @@ class MarketDataService:
         raw_data = {
             "indicatorType": indicatorType,
             "instrumentUid": instrumentUid,
-            "from": from_date,
-            "to": to_date,
+            "from": prepare_date(from_date),
+            "to": prepare_date(to_date),
             "interval": interval,
             "typeOfPrice": typeOfPrice,
             "smoothing": smoothing,
@@ -140,7 +140,7 @@ class MarketDataService:
     def get_candles(
         self,
         from_date,
-        to_date=now_str(),
+        to_date=now(),
         interval=CandleInterval.ONE_DAY,
         instrumentId='',
         candleSourceType=CandleSource.UNSPECIFIED,
@@ -163,8 +163,8 @@ class MarketDataService:
 
         data = json.dumps(
             {
-                "from": from_date,
-                "to": to_date,
+                "from": prepare_date(from_date),
+                "to": prepare_date(to_date),
                 "interval": interval,
                 "instrumentId": instrumentId,
                 "candleSourceType": candleSourceType,

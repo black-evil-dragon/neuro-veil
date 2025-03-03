@@ -56,9 +56,16 @@ def main():
     fetcher = DataFetcher(TService, processor=TModel.processor)
     
     instrumentsService = InstrumentsService(TService)
+
+
     response = instrumentsService.find_instrument('RU000A107UL4')
     tbank_instrument = response.get('instruments')[0]
+    
     log.info(f"Инструмент найден: {tbank_instrument['ticker']}")
+
+    
+    response = instrumentsService.find_instrument('RU000A0JP7K5')
+    print(response)
 
     # data = fetcher.get_data(
     #     instrument=tbank_instrument,
@@ -69,11 +76,12 @@ def main():
     # log.info(f"Получено {len(data)} записей для обучения")
     
     # TModel.processor.save_to_json(data, './output/data/tbank_data.json')
-    data = TModel.processor.load_from_json('./output/data/tbank_data.json')
+    # data = TModel.processor.load_from_json('./output/data/tbank_data.json')
 
-    TModel.train(data, features=['open', 'high', 'low', 'close', 'volume', 'RSI_AVG_14', 'RSI_CLOSE_14', 'SMA_CLOSE_14'])
-    TModel.save('tbank', test=True)
-    log.info("Программа завершена")
+    # TModel.train(data, features=['open', 'high', 'low', 'close', 'volume', 'RSI_AVG_14', 'RSI_CLOSE_14', 'SMA_CLOSE_14', 'IMOEXF_CLOSE', 'IMOEXF_OPEN', 'IMOEXF_VOLUME'])
+    # TModel.save('tbank', test=True)
 
 if __name__ == "__main__":
     main()
+
+    log.info("Программа завершена")

@@ -1,9 +1,13 @@
 .idea
 .gigacode
 .gigaide
-config.py
-sklearn-env
 
+config.py
+
+conf
+output
+# models
+TinkoffService
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

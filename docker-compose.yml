@@ -1,0 +1,13 @@
+version: '3.8'
+services:
+  app:
+    build: ./src
+    command: python main.py
+    volumes:
+      - .:/app  # Монтируем текущую директорию в /app внутри контейнера
+      - ./output:/app/output  # Монтируем директорию для сохранения модели и других файлов
+    working_dir: /app
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=compute,utility

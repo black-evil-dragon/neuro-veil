@@ -5,6 +5,7 @@ class DataProcessor:
     @staticmethod
     def process_indicators(indicators):
         processed_data = []
+
         for indicator in indicators['technicalIndicators']:
             processed_data.append({
                 'time': indicator['timestamp'],

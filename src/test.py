@@ -1,61 +1,134 @@
-from datetime import datetime, timedelta
-import logging
-from data import DataFetcher, DataProcessor
-from services import InstrumentsService, MarketDataService, TinkoffService
+from re import S
+
+from matplotlib import pyplot as plt
+from data.fetcher import DataFetcher
+from services.TinkoffService import TinkoffService
+from services.InstrumentsService import InstrumentsService
+from services.MarketDataService import MarketDataService
+
 from utils.config import SANDBOX_TOKEN
+
+from datetime import timedelta
 from utils.time import now, prepare_date
 
 
-def setup_logger():
-    """
-    Настройка логгера с кодировкой UTF-8.
-    """
-    # Создаем логгер
-    logger = logging.getLogger("neuro")
-    logger.setLevel(logging.DEBUG)
-
-    # Формат логов
-    formatter = logging.Formatter("[%(asctime)s] [%(levelname)s] %(message)s")
-
-    # Логирование в консоль
-    console_handler = logging.StreamHandler()
-    console_handler.setFormatter(formatter)
-    logger.addHandler(console_handler)
-
-    # Логирование в файл с кодировкой UTF-8
-    log_filename = f"./output/logs/neuro_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-    file_handler = logging.FileHandler(log_filename, encoding='utf-8')  # Указываем кодировку UTF-8
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
-
-    return logger
 
 
 
-log = setup_logger()
+import logging
+import sys
 
-TService = TinkoffService(token=SANDBOX_TOKEN, is_sandbox=True)
-
-instrumentsService = InstrumentsService(TService)
-marketDataService = MarketDataService(TService)
+import os
+os.environ["CUDA_VISIBLE_DEVICES"] = '-1'
 
 
-response = instrumentsService.find_instrument('RU000A107UL4')
-tbank_instrument = response.get('instruments')[0]
+logging.basicConfig(filename="./neuro.log", format='[%(asctime)s]  %(message)s', filemode='w')
+logging.getLogger('neuro').addHandler(logging.StreamHandler(sys.stdout))
 
-response = instrumentsService.find_instrument('IMOEXF Индекс МосБиржи')
-moex = response.get('instruments')[0]
+log = logging.getLogger('neuro')
+log.setLevel(logging.DEBUG)
 
-processor = DataProcessor()
-fetcher = DataFetcher(TService=TService, processor=processor)
 
-data = fetcher.get_data(
-    instrument=tbank_instrument,
-    from_date=now() - timedelta(days=365),
-    to_date=now(),
-    additive_instruments=[
-        moex
-    ]
-)
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import StandardScaler
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import LSTM, Dense
 
-processor.save_to_json(data, './output/data/test_data.json')
+class DataAnalyzer:
+    @staticmethod
+    def create_dataframe(data):
+        df = pd.DataFrame(data)
+        df['time'] = pd.to_datetime(df['time'])
+        df.set_index('time', inplace=True)
+        return df
+
+    @staticmethod
+    def normalize_data(df, features):
+        scaler = StandardScaler()
+        df[features] = scaler.fit_transform(df[features])
+        df.fillna(0, inplace=True)
+        return df
+
+    @staticmethod
+    def prepare_lstm_data(data, look_back=60):
+        X, y = [], []
+        for i in range(len(data) - look_back):
+            X.append(data[i:i + look_back])
+            y.append(data[i + look_back, 3])
+        return np.array(X), np.array(y)
+
+    @staticmethod
+    def build_lstm_model(input_shape):
+        model = Sequential()
+        model.add(LSTM(50, return_sequences=True, input_shape=input_shape))
+        model.add(LSTM(50, return_sequences=False))
+        model.add(Dense(25))
+        model.add(Dense(1))
+        model.compile(optimizer='adam', loss='mean_squared_error')
+        return model
+
+
+from utils.numbers import parse_quotation
+
+class DataProcessor:
+    @staticmethod
+    def process_indicators(indicators):
+        processed_data = []
+        for indicator in indicators['technicalIndicators']:
+            processed_data.append({
+                'time': indicator['timestamp'],
+                'value': parse_quotation(indicator['signal']),      
+            })
+        return processed_data
+    
+    
+    @staticmethod
+    def process_candles(candles):
+        processed_data = []
+        for candle in candles['candles']:
+            processed_data.append({
+                'time': candle['time'],
+                'open': parse_quotation(candle['open']),
+                'high': parse_quotation(candle['high']),
+                'low': parse_quotation(candle['low']),
+                'close': parse_quotation(candle['close']),
+                'volume': int(candle['volume']),
+                # 'isComplete': candle['isComplete'],
+                # 'candleSourceType': candle['candleSourceType'],
+                
+            })
+        return processed_data
+
+
+
+def main():
+    processor = DataProcessor()
+    analyzer = DataAnalyzer()
+
+
+    TService = TinkoffService(token=SANDBOX_TOKEN, is_sandbox=True)
+
+    instrumentsService = InstrumentsService(TService)
+    marketDataService = MarketDataService(TService)
+
+    response = instrumentsService.find_instrument('BBG0013HGFT4')
+    [print(r) for r in response.get('instruments')]
+
+    data = DataFetcher(TService=TService, processor=processor).get_data(
+        instrument=response.get('instruments')[0],
+        from_date=now() - timedelta(days=8000),
+        to_date=now() - timedelta(days=7999),
+        # additive_instruments=[
+        #     moex
+        # ]
+    )
+
+    [print(r) for r in data]
+
+
+
+
+
+if __name__ == "__main__":
+    main()

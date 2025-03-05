@@ -39,65 +39,103 @@ class DataFetcher:
             to_date=to_date,
             instrumentId=instrument.get("uid"),
             interval=self.marketDataService.CandleInterval.ONE_HOUR,
-            limit=5000,
+            limit=2400,
         )
+        processed_candles = self.processor.process_candles(candles)
+        for candle in processed_candles:
+            data[candle["time"]] = candle
+
+        # Дневные свечи
+        candles = self.marketDataService.get_candles(
+            from_date=from_date,
+            to_date=to_date,
+            instrumentId=instrument.get("uid"),
+            interval=self.marketDataService.CandleInterval.ONE_DAY,
+            limit=2400,
+        )
+        processed_candles = self.processor.process_candles(candles)
+        for candle in processed_candles:
+            data[candle["time"]] = candle
 
 
-        RSI_AVG_14 = self.marketDataService.get_tech_analysis(
+
+        # RSI
+        # RSI_CLOSE_14
+        INDICATORS = self.marketDataService.get_tech_analysis(
             from_date=from_date,
             to_date=to_date,
             instrumentUid=instrument.get("uid"),
             interval=self.marketDataService.IndicatorIntervalType.ONE_HOUR,
             indicatorType=self.marketDataService.IndicatorType.RSI,
-            typeOfPrice=self.marketDataService.TypeOfPrice.AVG,
+            typeOfPrice=self.marketDataService.TypeOfPrice.CLOSE,
             length=14,
         )
+        processed_indicators = self.processor.process_indicators(INDICATORS)
+        for indicator in processed_indicators:
+            data[indicator["time"]]["RSI_CLOSE_14"] = indicator["value"]
 
 
-        SMA_CLOSE_14 = self.marketDataService.get_tech_analysis(
+        # --------
+
+        # # BB
+        # INDICATORS = self.marketDataService.get_tech_analysis(
+        #     from_date=from_date,
+        #     to_date=to_date,
+        #     instrumentUid=instrument.get("uid"),
+        #     interval=self.marketDataService.IndicatorIntervalType.ONE_HOUR,
+        #     indicatorType=self.marketDataService.IndicatorType.BB,
+        #     typeOfPrice=self.marketDataService.TypeOfPrice.CLOSE,
+        #     length=20,
+        # )
+        # processed_indicators = self.processor.process_indicators(INDICATORS)
+        # for indicator in processed_indicators:
+        #     data[indicator["time"]]["BB_CLOSE_20"] = indicator["value"]
+
+
+
+
+        # MACD
+        INDICATORS = self.marketDataService.get_tech_analysis(
+            from_date=from_date,
+            to_date=to_date,
+            instrumentUid=instrument.get("uid"),
+            interval=self.marketDataService.IndicatorIntervalType.ONE_HOUR,
+            indicatorType=self.marketDataService.IndicatorType.MACD,
+            typeOfPrice=self.marketDataService.TypeOfPrice.CLOSE,
+            smoothing={
+                "fastLength": 12,
+                "slowLength": 26,
+                "signalSmoothing": 9,
+            }
+        )
+        processed_indicators = self.processor.process_indicators(INDICATORS)
+        for indicator in processed_indicators:
+            data[indicator["time"]]["MACD_CLOSE_12_26_9"] = indicator["value"]
+
+
+
+
+        # SMA
+        INDICATORS = self.marketDataService.get_tech_analysis(
             from_date=from_date,
             to_date=to_date,
             instrumentUid=instrument.get("uid"),
             interval=self.marketDataService.IndicatorIntervalType.ONE_HOUR,
             indicatorType=self.marketDataService.IndicatorType.SMA,
             typeOfPrice=self.marketDataService.TypeOfPrice.CLOSE,
-            length=50,
-        )
-
-
-        RSI_CLOSE_14 = self.marketDataService.get_tech_analysis(
-            from_date=from_date,
-            to_date=to_date,
-            instrumentUid=instrument.get("uid"),
-            interval=self.marketDataService.IndicatorIntervalType.ONE_HOUR,
-            indicatorType=self.marketDataService.IndicatorType.RSI,
-            typeOfPrice=self.marketDataService.TypeOfPrice.CLOSE,
             length=14,
         )
-
-    
-
-        # Обработка данных
-        processed_candles = self.processor.process_candles(candles)
-        for candle in processed_candles:
-            data[candle["time"]] = candle
-
-        processed_indicators = self.processor.process_indicators(RSI_AVG_14)
-        for indicator in processed_indicators:
-            data[indicator["time"]]["RSI_AVG_14"] = indicator["value"]
-
-        processed_indicators = self.processor.process_indicators(RSI_CLOSE_14)
-        for indicator in processed_indicators:
-            data[indicator["time"]]["RSI_CLOSE_14"] = indicator["value"]
-
-        processed_indicators = self.processor.process_indicators(SMA_CLOSE_14)
+        processed_indicators = self.processor.process_indicators(INDICATORS)
         for indicator in processed_indicators:
             data[indicator["time"]]["SMA_CLOSE_14"] = indicator["value"]
+    
 
+
+        # Обработка данных
 
         if additive_instruments:
             for instrument in additive_instruments:
-                log.debug(f'\tДобавляем данные по инструменту: {instrument.get("uid")}')
+                log.debug(f'\tДобавляем данные по инструменту: {instrument.get("ticker")}')
                 additive_candles = self.marketDataService.get_candles(
                     from_date=from_date,
                     to_date=to_date,
@@ -107,7 +145,24 @@ class DataFetcher:
                 )
 
                 processed_candles = self.processor.process_candles(additive_candles)
-                log.debug(f'\tВсего: {len(processed_candles)}')
+                log.debug(f'\tВсего: {len(processed_candles) + len(data)}')
+                for candle in processed_candles:
+                    if candle.get('time') in data:
+                        data[candle["time"]][f"{instrument.get('ticker')}_CLOSE"] = candle.get("close")
+                        data[candle["time"]][f"{instrument.get('ticker')}_OPEN"] = candle.get("open")
+                        data[candle["time"]][f"{instrument.get('ticker')}_VOLUME"] = candle.get("volume")
+
+
+                additive_candles = self.marketDataService.get_candles(
+                    from_date=from_date,
+                    to_date=to_date,
+                    instrumentId=instrument.get("uid"),
+                    interval=self.marketDataService.CandleInterval.ONE_DAY,
+                    limit=5000,
+                )
+
+                processed_candles = self.processor.process_candles(additive_candles)
+                log.debug(f'\tВсего: {len(processed_candles) + len(data)}')
                 for candle in processed_candles:
                     if candle.get('time') in data:
                         data[candle["time"]][f"{instrument.get('ticker')}_CLOSE"] = candle.get("close")
@@ -115,7 +170,11 @@ class DataFetcher:
                         data[candle["time"]][f"{instrument.get('ticker')}_VOLUME"] = candle.get("volume")
                 
 
-        return [data[key] for key in data]
+        candles = [data[key] for key in data]
+        for i in range(1, len(candles)):
+            candles[i]['delta'] = (candles[i]['close'] - candles[i-1]['close']) / candles[i]['close']
+
+        return candles
 
 
 

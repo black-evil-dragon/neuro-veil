@@ -64,7 +64,7 @@ def main():
 
         "RSI_CLOSE_14",
         "SMA_CLOSE_14",
-        "MACD_CLOSE_12_26_9",
+        # "MACD_CLOSE_12_26_9",
     ]
 
 
@@ -108,28 +108,31 @@ def main():
     log.info(f"Инструмент найден: {dollar['ticker']}")
 
 
-    # data = fetcher.get_data(
-    #     instrument=tbank_instrument,
-    #     from_date=now() - timedelta(days=8000),
-    #     to_date=now(),
-    #     additive_instruments=[
-    #         moex,
-    #         dollar
-    #     ]
-    # )
+    data = fetcher.get_data(
+        instrument=tbank_instrument,
+        from_date=now() - timedelta(days=2000),
+        to_date=now(),
+        additive_instruments=[
+            moex,
+            dollar
+        ]
+    )
 
-    # log.info(f"Получено {len(data)} записей для обучения")
-    # TModel.processor.save_to_json(data, "./output/data/tbank_test.json")
+    log.info(f"Получено {len(data)} записей для обучения")
+    TModel.processor.save_to_json(data, "./output/data/tbank_test.json")
     
 
-    data = TModel.processor.load_from_json('./output/data/tbank.json')
+    data = TModel.processor.load_from_json('./output/data/tbank_test.json')
 
-    TModel.train(data, features=features)
+    TModel.train(data=data[:-250], features=features)
 
 
     TModel.save("tbank", test=True)
 
-    # TModel.load(name='tbank', extension='keras', test=True)
+    TModel.load(name='tbank', extension='keras', test=True)
+
+
+    TModel.predict(data=data[-250:], features=features)
 
 
 if __name__ == "__main__":

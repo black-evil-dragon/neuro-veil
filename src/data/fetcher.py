@@ -171,8 +171,6 @@ class DataFetcher:
                 
 
         candles = [data[key] for key in data]
-        for i in range(1, len(candles)):
-            candles[i]['delta'] = (candles[i]['close'] - candles[i-1]['close']) / candles[i]['close']
 
         return candles
 
@@ -205,6 +203,8 @@ class DataFetcher:
 
         sorted_times = sorted(raw_data.keys(), key=lambda x: datetime.fromisoformat(x))
         sorted_data = [raw_data[time] for time in sorted_times]
+        for i in range(1, len(sorted_data)):
+            sorted_data[i]['delta'] = (sorted_data[i]['close'] - sorted_data[i-1]['close']) / sorted_data[i]['close']
         
         log.info(f"Получено {len(sorted_data)} записей")
 

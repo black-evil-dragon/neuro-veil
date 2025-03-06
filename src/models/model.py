@@ -1,3 +1,4 @@
+import time
 from deprecated import deprecated
 
 from sklearn.metrics import mean_absolute_error, mean_squared_error
@@ -168,33 +169,95 @@ class Model:
 
 
     def predict(self, data, features):
-        """
-        Выполняет предсказание на основе данных.
-        
-        :param data: Данные для предсказания
-        :param features: Список признаков, используемых для предсказания.
-        :return: model.
-        """
         if self.model is None:
             log.warning("Модель не загружена. Используйте метод load() для загрузки модели.")
             return None
 
-        log.info("Начало предсказания")
+        # Создание DataFrame
         df = self.create_dataframe(data)
-        df = self.normalize_data(df, features)
-        prepared_data = df[features].values
 
-        look_back = self.look_back  # Должно совпадать с look_back при обучении
-        X, _ = self.create_sequences(prepared_data, look_back)
+        # Проверка на пропущенные значения
+        if df.isnull().values.any():
+            log.warning("Обнаружены пропущенные значения (NaN). Заполняем нулями.")
+            df.fillna(0, inplace=True)
 
-        log.debug(f"Данные подготовлены для предсказания. Форма X: {X.shape}")
-        y_pred = self.model.predict(X)
+        log.info("Начало предсказания")
 
-        log.info("Предсказание завершено")
-        return y_pred
-    
+        # Подготовка данных
+        data = df[features].values
+        target = df[self.target].values
+
+        # Нормализация данных
+        normalized_data, normalized_target = self.normalize_data(data, target)
+
+        # Создание последовательностей для тестовых данных
+        X_test, y_test = self.create_sequences(normalized_data, normalized_target, self.look_back)
+
+        # Инициализация графика
+        plt.figure(figsize=(14, 7))
+        plt.ion()  # Включение интерактивного режима
+
+        # Списки для хранения предсказанных и реальных цен
+        predicted_prices = []
+        real_prices = []
+        time_points = range(len(X_test))
+
+        # Списки для хранения точек, которые нужно отображать каждые 4 итерации
+        scatter_predicted = []
+        scatter_real = []
+        scatter_time = []
+
+        # Последовательное предсказание и отображение реальной цены
+        for i in range(len(X_test)):
+            # Получение текущей последовательности
+            current_sequence = X_test[i].reshape(1, self.look_back, len(features))
+
+            # Предсказание следующей свечи
+            predicted_normalized = self.model.predict(current_sequence)
+            predicted_value = self.scaler_minmax.inverse_transform(predicted_normalized.reshape(-1, 1))[0][0]  # Обратное преобразование
+
+            # Реальная цена следующей свечи
+            real_value = self.scaler_minmax.inverse_transform(y_test[i].reshape(-1, 1))[0][0]
 
 
+            # Добавление предсказания и реальной цены в списки
+            predicted_prices.append(predicted_value)
+            real_prices.append(real_value)
+
+            # Добавление точек для отображения каждые 4 итерации
+            if i % 12 == 0:
+                scatter_predicted.append(predicted_value)
+                scatter_real.append(real_value)
+                scatter_time.append(i)
+
+                log.info(
+                    f"Свеча {i + 1}: "
+                    f"Предсказанная цена = {predicted_value:.2f}, "
+                    f"Реальная цена = {real_value:.2f}, "
+                    f"Ошибка = {((real_value - predicted_value)/real_value)*100:.2f}"
+                )
+
+
+            # Очистка графика и отображение новых данных
+            plt.clf()
+            plt.plot(self.scaler_minmax.inverse_transform(y_test.reshape(-1, 1)), label='', color='green', linestyle='--')
+            plt.plot(time_points[:i+1], predicted_prices, label='Предсказанные цены', color='red', linestyle='--')
+            plt.plot(time_points[:i+1], real_prices, label='Реальные цены', color='green', linestyle='-')
+
+            # Отображение точек каждые 4 итерации
+            plt.scatter(scatter_time, scatter_predicted, color='red', s=25, label='Предсказанные точки')
+            plt.scatter(scatter_time, scatter_real, color='green', s=25, label='Реальные точки')
+
+            plt.title('Предсказание и реальная цена следующей свечи')
+            plt.xlabel('Время')
+            plt.ylabel('Цена закрытия')
+            plt.legend()
+            plt.grid(True)
+            # plt.pause(.005)
+
+        plt.ioff()  # Выключение интерактивного режима
+        plt.show()
+        input()
 
 
     def normalize_data(self, data, target):
@@ -228,11 +291,10 @@ class Model:
 
 
     def build_lstm_model(self, input_shape):
-        set_global_policy('mixed_float16')
-
+        # set_global_policy('mixed_float16')
         model = Sequential()
         
-        model = self.get_model_v2(model, input_shape)
+        model = self.get_model_v1(model, input_shape)
         self.model = model
 
         return model
@@ -270,6 +332,7 @@ class Model:
         )
         
         return model
+    
     
 
     @staticmethod

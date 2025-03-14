@@ -1,133 +1,84 @@
-from re import S
-
-from matplotlib import pyplot as plt
-from data.fetcher import DataFetcher
+from datetime import timedelta
+import pandas as pd
+import logging
+import sys
+import os
+from utils.numbers import parse_quotation
 from services.TinkoffService import TinkoffService
 from services.InstrumentsService import InstrumentsService
 from services.MarketDataService import MarketDataService
-
 from utils.config import SANDBOX_TOKEN
+from utils.time import now
 
-from datetime import timedelta
-from utils.time import now, prepare_date
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
+logging.basicConfig(
+    filename="./neuro.log", format="[%(asctime)s]  %(message)s", filemode="w"
+)
+logging.getLogger("neuro").addHandler(logging.StreamHandler(sys.stdout))
 
-
-
-
-import logging
-import sys
-
-import os
-os.environ["CUDA_VISIBLE_DEVICES"] = '-1'
-
-
-logging.basicConfig(filename="./neuro.log", format='[%(asctime)s]  %(message)s', filemode='w')
-logging.getLogger('neuro').addHandler(logging.StreamHandler(sys.stdout))
-
-log = logging.getLogger('neuro')
+log = logging.getLogger("neuro")
 log.setLevel(logging.DEBUG)
 
 
-import pandas as pd
-import numpy as np
-from sklearn.preprocessing import StandardScaler
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense
-
-class DataAnalyzer:
-    @staticmethod
-    def create_dataframe(data):
-        df = pd.DataFrame(data)
-        df['time'] = pd.to_datetime(df['time'])
-        df.set_index('time', inplace=True)
-        return df
-
-    @staticmethod
-    def normalize_data(df, features):
-        scaler = StandardScaler()
-        df[features] = scaler.fit_transform(df[features])
-        df.fillna(0, inplace=True)
-        return df
-
-    @staticmethod
-    def prepare_lstm_data(data, look_back=60):
-        X, y = [], []
-        for i in range(len(data) - look_back):
-            X.append(data[i:i + look_back])
-            y.append(data[i + look_back, 3])
-        return np.array(X), np.array(y)
-
-    @staticmethod
-    def build_lstm_model(input_shape):
-        model = Sequential()
-        model.add(LSTM(50, return_sequences=True, input_shape=input_shape))
-        model.add(LSTM(50, return_sequences=False))
-        model.add(Dense(25))
-        model.add(Dense(1))
-        model.compile(optimizer='adam', loss='mean_squared_error')
-        return model
-
-
-from utils.numbers import parse_quotation
-
-class DataProcessor:
-    @staticmethod
-    def process_indicators(indicators):
-        processed_data = []
-        for indicator in indicators['technicalIndicators']:
-            processed_data.append({
-                'time': indicator['timestamp'],
-                'value': parse_quotation(indicator['signal']),      
-            })
-        return processed_data
-    
-    
-    @staticmethod
-    def process_candles(candles):
-        processed_data = []
-        for candle in candles['candles']:
-            processed_data.append({
-                'time': candle['time'],
-                'open': parse_quotation(candle['open']),
-                'high': parse_quotation(candle['high']),
-                'low': parse_quotation(candle['low']),
-                'close': parse_quotation(candle['close']),
-                'volume': int(candle['volume']),
-                # 'isComplete': candle['isComplete'],
-                # 'candleSourceType': candle['candleSourceType'],
-                
-            })
-        return processed_data
-
-
-
 def main():
-    processor = DataProcessor()
-    analyzer = DataAnalyzer()
-
-
     TService = TinkoffService(token=SANDBOX_TOKEN, is_sandbox=True)
-
     instrumentsService = InstrumentsService(TService)
     marketDataService = MarketDataService(TService)
 
-    response = instrumentsService.find_instrument('BBG0013HGFT4')
-    [print(r) for r in response.get('instruments')]
-
-    data = DataFetcher(TService=TService, processor=processor).get_data(
-        instrument=response.get('instruments')[0],
-        from_date=now() - timedelta(days=8000),
-        to_date=now() - timedelta(days=7999),
-        # additive_instruments=[
-        #     moex
-        # ]
+    # Получение данных о сделках
+    data = marketDataService.get_last_trades(
+        instrumentId="TCS80A107UL4", from_date=now() - timedelta(days=1), to_date=now()
     )
+    trades = data["trades"]
 
-    [print(r) for r in data]
+    # Преобразование данных о сделках в DataFrame
+    trade_data = []
+    for trade in trades:
+        trade_data.append({
+            "time": pd.to_datetime(trade["time"]),
+            "direction": trade["direction"],
+            "price": parse_quotation(trade["price"]),
+            "quantity": int(trade["quantity"])
+        })
 
+    df = pd.DataFrame(trade_data)
+    df.set_index("time", inplace=True)
 
+    # Группировка по 30 минутам
+    half_hourly_trades = df.resample("30min")
 
+    # Результирующий словарь для хранения данных за каждые 30 минут
+    result_dict = {}
+
+    for interval, group in half_hourly_trades:
+        sell_trades = group[group["direction"] == "TRADE_DIRECTION_SELL"]
+        buy_trades = group[group["direction"] == "TRADE_DIRECTION_BUY"]
+
+        total_sell_price = (sell_trades["price"] * sell_trades["quantity"]).sum()
+        total_sell_quantity = sell_trades["quantity"].sum()
+        avg_sell_price = total_sell_price / total_sell_quantity if total_sell_quantity > 0 else 0
+
+        total_buy_price = (buy_trades["price"] * buy_trades["quantity"]).sum()
+        total_buy_quantity = buy_trades["quantity"].sum()
+        avg_buy_price = total_buy_price / total_buy_quantity if total_buy_quantity > 0 else 0
+
+        total_trade_price = (group["price"] * group["quantity"]).sum()
+        total_trade_quantity = group["quantity"].sum()
+        avg_trade_price = total_trade_price / total_trade_quantity if total_trade_quantity > 0 else 0
+
+        result_dict[interval] = {
+            "avg_sell_price": avg_sell_price,
+            "avg_buy_price": avg_buy_price,
+            "avg_trade_price": avg_trade_price,
+            "total_sell_quantity": total_sell_quantity,
+            "total_buy_quantity": total_buy_quantity,
+            "total_trade_quantity": total_trade_quantity
+        }
+
+    # Вывод результата
+    for interval, stats in result_dict.items():
+        print(stats)
 
 
 if __name__ == "__main__":

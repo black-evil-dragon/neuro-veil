@@ -1,5 +1,9 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
+import numpy as np
+import pytz
+
+from bot.test import TradingBot
 from services.TinkoffService import TinkoffService
 from services.InstrumentsService import InstrumentsService
 
@@ -50,20 +54,28 @@ def main():
     features = [
         "close",
 
-        # "open",
-        # "high",
-        # "low",
-        # "volume",
+        "open",
+        "high",
+        "low",
+        "volume",
         # "delta"
     ]
 
     indicators = [
         # "RSI_CLOSE_7"
-        # "SMA_CLOSE_50",
+        "RSI_CLOSE_14",
+    
         # "BB_CLOSE_20",
 
-        "RSI_CLOSE_14",
+        "SMA_CLOSE_5",
         "SMA_CLOSE_14",
+        "SMA_CLOSE_50",
+        "SMA_CLOSE_100",
+
+        "EMA_CLOSE_5",
+        "EMA_CLOSE_50",
+
+
         # "MACD_CLOSE_12_26_9",
     ]
 
@@ -94,6 +106,8 @@ def main():
     response = instrumentsService.find_instrument("RU000A107UL4")
     tbank_instrument = response.get("instruments")[0]
 
+    print(tbank_instrument)
+
     log.info(f"Инструмент найден: {tbank_instrument['ticker']}")
 
     # - Dop: MOEX 
@@ -110,29 +124,67 @@ def main():
 
     data = fetcher.get_data(
         instrument=tbank_instrument,
-        from_date=now() - timedelta(days=2000),
+        from_date=now() - timedelta(days=1500),
         to_date=now(),
         additive_instruments=[
             moex,
             dollar
-        ]
+        ],
+        step=50
     )
 
     log.info(f"Получено {len(data)} записей для обучения")
-    TModel.processor.save_to_json(data, "./output/data/tbank_test.json")
-    
+    TModel.processor.save_to_json(data, "./output/data/tbank-full-test.json")
+    exit()
 
-    data = TModel.processor.load_from_json('./output/data/tbank_test.json')
+    data = TModel.processor.load_from_json('./output/data/tbank-full-test.json')
 
-    TModel.train(data=data[:-250], features=features)
+    # Получение последней свечи
+    last_candle = data[-1]
+    last_candle_time = last_candle["time"]
+
+    # Определение даты последнего обновления
+    last_update_date = datetime.fromisoformat(last_candle_time).replace(tzinfo=pytz.timezone('Europe/Moscow')).astimezone(pytz.UTC)
 
 
-    TModel.save("tbank", test=True)
+    # new_data = fetcher.get_data(
+    #     instrument=tbank_instrument,
+    #     from_date=last_update_date,
+    #     to_date=now(),
+    #     additive_instruments=[
+    #         moex,
+    #         dollar
+    #     ]
+    # )
+
+    # # # Объединение данных
+    # data.extend(new_data)
+
+    # # Сохранение обновленных данных
+    TModel.processor.save_to_json(data, "./output/data/tbank-full-test.json")
+    exit()
+    # TModel.train(data=data[:-250], features=features)
+
+
+    # TModel.save("tbank", test=True)
 
     TModel.load(name='tbank', extension='keras', test=True)
 
+    # TModel.predict(
+    #     data=data[-500:],
+    #     features=features,
 
-    TModel.predict(data=data[-250:], features=features)
+    # )
+
+
+    # Инициализация и запуск бота
+    bot = TradingBot(TModel)
+    trades, final_balance = bot.run(data=data[:], features=features)
+
+    # Вывод результатов
+    print(f"Final Balance: {final_balance}")
+    for trade in trades:
+        print(trade)
 
 
 if __name__ == "__main__":

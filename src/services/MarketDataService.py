@@ -61,6 +61,12 @@ class MarketDataService:
         EXCHANGE = "CANDLE_SOURCE_EXCHANGE"
         INCLUDE_WEEKEND = "CANDLE_SOURCE_INCLUDE_WEEKEND"
 
+    class TradeSource:
+        UNSPECIFIED = "TRADE_SOURCE_UNSPECIFIED"
+        EXCHANGE = "TRADE_SOURCE_EXCHANGE"
+        DEALER = "TRADE_SOURCE_DEALER"
+        ALL = "TRADE_SOURCE_ALL"
+
 
 
     def __init__(self, service):
@@ -69,6 +75,29 @@ class MarketDataService:
 
         self.URL = self.manager.get_url()
 
+
+    def get_last_trades(
+        self,
+        from_date: str = None,
+        to_date: str = None,
+        instrumentId: str = None,
+        tradeSource = TradeSource.ALL,
+    ):
+        path = '/GetLastTrades'
+
+        data = json.dumps(
+            {
+                "from": prepare_date(from_date),
+                "to": prepare_date(to_date),
+                "instrumentId": instrumentId,
+                "tradeSource": tradeSource,
+            }, default=str
+        )
+
+        return self.manager.session.post(
+            url=self.URL + path,
+            data=data,
+        ).json()
 
 
     def get_order_book(

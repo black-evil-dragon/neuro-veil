@@ -1,7 +1,9 @@
 import json
+import typing
 
 import requests
 
+from services import TinkoffService
 from utils.time import now, now_str, prepare_date
 
 
@@ -69,7 +71,7 @@ class MarketDataService:
 
 
 
-    def __init__(self, service):
+    def __init__(self, service: TinkoffService):
         service.name = 'MarketDataService'
         self.manager = service
 
@@ -94,10 +96,13 @@ class MarketDataService:
             }, default=str
         )
 
-        return self.manager.session.post(
+        response = self.manager.session.post(
             url=self.URL + path,
             data=data,
-        ).json()
+        )
+
+
+        return response.json()
 
 
     def get_order_book(
@@ -206,4 +211,42 @@ class MarketDataService:
             url=self.URL + path,
             data=data,
         ).json()
+    
+
+
+    @staticmethod
+    def get_limit(intervalType: str) -> int:
+        """
+            1 минута    — От 1 минуты до 1 дня. Максимальное значение limit — 2400.\n
+            2 минуты    — От 2 минут до 1 дня. Максимальное значение limit — 1200.\n
+            3 минуты    — От 3 минут до 1 дня. Максимальное значение limit — 750.\n
+            5 минут     — От 5 минут до недели. Максимальное значение limit — 2400.\n
+            10 минут    — От 10 минут до недели. Максимальное значение limit — 1200.\n
+            15 минут    — От 15 минут до 3 недель. Максимальное значение limit — 2400.\n
+            30 минут    — От 30 минут до 3 недель. Максимальное значение limit — 1200.\n
+            1 час       — От 1 часа до 3 месяцев. Максимальное значение limit — 2400.\n
+            2 часа      — От 2 часов до 3 месяцев. Максимальное значение limit — 2400.\n
+            4 часа      — От 4 часов до 3 месяцев. Максимальное значение limit — 700.\n
+            1 день      — От 1 дня до 6 лет. Максимальное значение limit — 2400.\n
+            1 неделя    — От 1 недели до 5 лет. Максимальное значение limit — 300.\n
+            1 месяц     — От 1 месяца до 10 лет. Максимальное значение limit — 120.
+
+        """
+        return {
+            "INDICATOR_INTERVAL_UNSPECIFIED": 2400,
+            "INDICATOR_INTERVAL_ONE_MINUTE": 2400,
+            "INDICATOR_INTERVAL_FIVE_MINUTES": 2400,
+            "INDICATOR_INTERVAL_FIFTEEN_MINUTES": 2400,
+            "INDICATOR_INTERVAL_ONE_HOUR": 2400,
+            "INDICATOR_INTERVAL_ONE_DAY": 2400,
+            "INDICATOR_INTERVAL_2_MIN": 1200,
+            "INDICATOR_INTERVAL_3_MIN": 750,
+            "INDICATOR_INTERVAL_10_MIN": 1200,
+            "INDICATOR_INTERVAL_30_MIN": 1200,
+            "INDICATOR_INTERVAL_2_HOUR": 2400,
+            "INDICATOR_INTERVAL_4_HOUR": 700,
+            "INDICATOR_INTERVAL_WEEK": 300,
+            "INDICATOR_INTERVAL_MONTH": 120,
+
+        }.get(intervalType, 2400)
 

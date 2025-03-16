@@ -1,5 +1,7 @@
 import json
 
+from services import TinkoffService
+
 
 class InstrumentsService:
 
@@ -17,7 +19,7 @@ class InstrumentsService:
         INDEX = "INSTRUMENT_TYPE_INDEX"
         COMMODITY = "INSTRUMENT_TYPE_COMMODITY"
 
-    def __init__(self, service):
+    def __init__(self, service: TinkoffService):
         service.name = 'InstrumentsService'
         self.manager = service
 

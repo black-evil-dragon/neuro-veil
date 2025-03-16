@@ -1,7 +1,6 @@
 from pickle import TRUE
 import pickle
-import time
-from deprecated import deprecated
+
 
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
@@ -10,14 +9,15 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 import tensorflow as tf
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, Dense, Dropout
-from tensorflow.keras.mixed_precision import set_global_policy
-from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau
+from keras.models import Sequential
+from keras.layers import LSTM, Dense, Dropout, LeakyReLU, LayerNormalization
+from keras.mixed_precision import set_global_policy
+from keras.optimizers import Adam
+from keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
 
-from data.proccessor import DataProcessor
 
+
+from data.common import InstrumentDataModel
 from utils.config import BATCH_SIZE, EPOCHS, LOOK_BACK
 
 import numpy as np
@@ -45,11 +45,10 @@ class Model:
             "float32"
         )
 
-        self.processor = DataProcessor()
         self.scaler = StandardScaler()
         self.scaler_minmax = MinMaxScaler()
 
-        self.SHOW_CORRELATION = True
+        self.SHOW_CORRELATION = False
         self.SHOW_METRICS = True
         self.SHOW_GRAPHICS = True
 
@@ -57,36 +56,39 @@ class Model:
         self.batch_size = BATCH_SIZE
         self.epochs = EPOCHS
 
-        self.lstm_version = 2
+        self.lstm_version = 3
 
-        self.train_size = 0.8
+        self.train_size = 0.75
         self.val_size = 0.1
 
         self.callbacks = [
-            EarlyStopping(monitor="val_loss", patience=15, restore_best_weights=True),
+            EarlyStopping(monitor="val_loss", patience=25, restore_best_weights=True),
             ReduceLROnPlateau(monitor="val_loss", factor=0.2, patience=5, min_lr=1e-6),
+            # ModelCheckpoint(".output/models//best_model.h5", monitor="val_loss", save_best_only=True)
         ]
 
         self.target = "close"
 
-        log.info("Инициализирован Model")
+        log.debug("Инициализирован Model")
+
+
 
     #########################################################################################################
     #
     # Метод для обучения модели
     #
     ##########################################################################################################
-    def train(self, data, features):
+    def train(self, train_data, features):
         log.info("Начало обучения модели")
-        df = self.create_dataframe(data)
 
-        if df.isnull().values.any():
-            log.warning("Обнаружены пропущенные значения (NaN). Заполняем нулями.")
-            df.fillna(0, inplace=True)
+
+        df = InstrumentDataModel.dict_to_dataframe(data=train_data)
+
 
         data = df[features].values
         target = df[self.target].values
-        dates = df.index
+        dates = pd.to_datetime(df.index)
+
 
         normalized_data, normalized_target = self.normalize_data(data, target)
 
@@ -116,7 +118,6 @@ class Model:
             self.show_correlation(df, features)
 
         log.info("Модель построена. Начало обучения...")
-        # Построение и обучение модели
         model = self.build_lstm_model((self.look_back, len(features)))
         history = model.fit(
             X_train,
@@ -155,7 +156,6 @@ class Model:
                     color="red",
                 )
 
-                # Настройка графика
                 plt.title("График ошибок в зависимости от эпохи")
                 plt.xlabel("Эпохи")
                 plt.ylabel("Ошибка (Loss)")
@@ -163,7 +163,7 @@ class Model:
                 plt.grid(True)
                 plt.show()
             except:
-                pass
+                log.info(f"Метрики модели на тестовых данных: MSE={mse:.4f}, MAE={mae:.4f}")
 
         # Визуализация результатов
         if self.SHOW_GRAPHICS:
@@ -201,30 +201,23 @@ class Model:
     #
     ##########################################################################################################
     def predict_future(self, initial_input, real_data, steps):
-        """
-        Рекурсивно предсказывает будущие значения, используя реальные данные для обновления входного окна.
-        :param initial_input: Начальное входное окно (последние look_back свечей).
-        :param real_data: Реальные данные для обновления входного окна.
-        :param steps: Количество шагов для предсказания.
-        :return: Список предсказанных значений.
-        """
         predictions = []
         current_input = initial_input.copy()
 
         for i in range(steps):
-            # Предсказание следующего значения
+
             next_prediction = self.model.predict(
                 current_input.reshape(1, self.look_back, -1)
             )
 
-            # Добавление предсказания к результатам
+
             predictions.append(next_prediction[0][0])
 
-            # Обновление входного окна: удаление первой строки и добавление реального значения
+
             current_input = np.roll(current_input, -1, axis=0)
-            if i < len(real_data):  # Если реальные данные доступны
+            if i < len(real_data):
                 current_input[-1] = real_data[i]
-            else:  # Если реальные данные недоступны, используем предсказанное значение
+            else:
                 current_input[-1] = next_prediction[0]
 
         return np.array(predictions)
@@ -237,114 +230,114 @@ class Model:
             )
             return None
 
-        # Создание DataFrame
-        df = self.create_dataframe(data)
+        # # Создание DataFrame
+        # df = self.create_dataframe(data)
 
-        half_size = int(len(df) * 0.5)
-
-
-        # Проверка на пропущенные значения
-        if df.isnull().values.any():
-            log.warning("Обнаружены пропущенные значения (NaN). Заполняем нулями.")
-            df.fillna(0, inplace=True)
-
-        print(df)
-
-        # Разделение данных на две половины
-        first_half = df.iloc[:half_size]
-        second_half = df.iloc[half_size:]
-
-        # ====================================
-        # Подготовка данных для первой половины
-        # ====================================
-        first_half_data = first_half[features].values
-        first_half_target = first_half["close"].values
-        first_half_dates = first_half.index
-
-        # Нормализация данных первой половины
-        normalized_first_half_data = self.scaler_minmax.fit_transform(first_half_data)
-        normalized_first_half_target = self.scaler_minmax.fit_transform(
-            first_half_target.reshape(-1, 1)
-        )
-
-        # Создание последовательностей для первой половины
-        X_first, y_first = self.create_sequences(
-            normalized_first_half_data, normalized_first_half_target, self.look_back
-        )
-
-        # Прогнозирование на первой половине
-        first_half_predictions = self.model.predict(X_first)
-        first_half_predictions = self.scaler_minmax.inverse_transform(
-            first_half_predictions
-        )
-        y_first = self.scaler_minmax.inverse_transform(y_first)
-        log.info("Прогнозирование на первой половине данных завершено")
+        # half_size = int(len(df) * 0.5)
 
 
-        # ===============================================
-        # Подготовка данных для второй половины (авторегрессия)
-        # ===============================================
-        second_half_data = second_half[features].values
-        second_half_target = second_half["close"].values
-        second_half_dates = second_half.index
+        # # Проверка на пропущенные значения
+        # if df.isnull().values.any():
+        #     log.warning("Обнаружены пропущенные значения (NaN). Заполняем нулями.")
+        #     df.fillna(0, inplace=True)
 
-        # Нормализация данных второй половины
-        normalized_second_half_data = self.scaler_minmax.fit_transform(second_half_data)
+        # print(df)
 
-        # Начальное окно для авторегрессии (последние look_back свечей из первой половины)
-        initial_window = normalized_first_half_data[-self.look_back :]
+        # # Разделение данных на две половины
+        # first_half = df.iloc[:half_size]
+        # second_half = df.iloc[half_size:]
 
-        # Рекурсивное прогнозирование для второй половины с использованием реальных данных
-        second_half_predictions_normalized = self.predict_future(
-            initial_window,
-            normalized_second_half_data,
-            len(second_half_data) + additive_steps
-        )
-        dummy_features = np.zeros(
-            (len(second_half_predictions_normalized), len(features) - 1)
-        )  # 4 других признака
-        predictions_with_dummy_features = np.hstack(
-            (second_half_predictions_normalized.reshape(-1, 1), dummy_features)
-        )
+        # # ====================================
+        # # Подготовка данных для первой половины
+        # # ====================================
+        # first_half_data = first_half[features].values
+        # first_half_target = first_half["close"].values
+        # first_half_dates = first_half.index
 
-        # Применяем inverse_transform
-        second_half_predictions = self.scaler_minmax.inverse_transform(
-            predictions_with_dummy_features
-        )
+        # # Нормализация данных первой половины
+        # normalized_first_half_data = self.scaler_minmax.fit_transform(first_half_data)
+        # normalized_first_half_target = self.scaler_minmax.fit_transform(
+        #     first_half_target.reshape(-1, 1)
+        # )
 
-        # Извлекаем только предсказанные значения для close
-        second_half_predictions = second_half_predictions[:, 0]
-        log.info("Прогнозирование на второй половине данных завершено")
+        # # Создание последовательностей для первой половины
+        # X_first, y_first = self.create_sequences(
+        #     normalized_first_half_data, normalized_first_half_target, self.look_back
+        # )
+
+        # # Прогнозирование на первой половине
+        # first_half_predictions = self.model.predict(X_first)
+        # first_half_predictions = self.scaler_minmax.inverse_transform(
+        #     first_half_predictions
+        # )
+        # y_first = self.scaler_minmax.inverse_transform(y_first)
+        # log.info("Прогнозирование на первой половине данных завершено")
+
+
+        # # ===============================================
+        # # Подготовка данных для второй половины (авторегрессия)
+        # # ===============================================
+        # second_half_data = second_half[features].values
+        # second_half_target = second_half["close"].values
+        # second_half_dates = second_half.index
+
+        # # Нормализация данных второй половины
+        # normalized_second_half_data = self.scaler_minmax.fit_transform(second_half_data)
+
+        # # Начальное окно для авторегрессии (последние look_back свечей из первой половины)
+        # initial_window = normalized_first_half_data[-self.look_back :]
+
+        # # Рекурсивное прогнозирование для второй половины с использованием реальных данных
+        # second_half_predictions_normalized = self.predict_future(
+        #     initial_window,
+        #     normalized_second_half_data,
+        #     len(second_half_data) + additive_steps
+        # )
+        # dummy_features = np.zeros(
+        #     (len(second_half_predictions_normalized), len(features) - 1)
+        # )  # 4 других признака
+        # predictions_with_dummy_features = np.hstack(
+        #     (second_half_predictions_normalized.reshape(-1, 1), dummy_features)
+        # )
+
+        # # Применяем inverse_transform
+        # second_half_predictions = self.scaler_minmax.inverse_transform(
+        #     predictions_with_dummy_features
+        # )
+
+        # # Извлекаем только предсказанные значения для close
+        # second_half_predictions = second_half_predictions[:, 0]
+        # log.info("Прогнозирование на второй половине данных завершено")
 
 
 
-        # Генерация дополнительных дат
-        additional_dates = pd.date_range(
-            start=second_half_dates[-1] + pd.Timedelta(hours=1),  # Следующий час после последней даты
-            periods=additive_steps,  # Количество дополнительных шагов
-            freq="h"  # Частота (например, "H" для часов)
-        )
+        # # Генерация дополнительных дат
+        # additional_dates = pd.date_range(
+        #     start=second_half_dates[-1] + pd.Timedelta(hours=1),  # Следующий час после последней даты
+        #     periods=additive_steps,  # Количество дополнительных шагов
+        #     freq="h"  # Частота (например, "H" для часов)
+        # )
 
-        # Объединяем исходные даты с дополнительными
-        extended_second_half_dates = np.concatenate([second_half_dates, additional_dates])
+        # # Объединяем исходные даты с дополнительными
+        # extended_second_half_dates = np.concatenate([second_half_dates, additional_dates])
 
-        extended_second_half_true = np.pad(
-            second_half_target,
-            (0, additive_steps),  # Добавляем 10 значений
-            mode="constant",
-            constant_values=np.nan
-        )
+        # extended_second_half_true = np.pad(
+        #     second_half_target,
+        #     (0, additive_steps),  # Добавляем 10 значений
+        #     mode="constant",
+        #     constant_values=np.nan
+        # )
 
-        # Визуализация результатов
-        self.plot_predictions(
-            first_half_dates[self.look_back :],
-            y_first,
-            first_half_predictions,
-            extended_second_half_dates,
-            # second_half_target,
-            extended_second_half_true,
-            second_half_predictions,
-        )
+        # # Визуализация результатов
+        # self.plot_predictions(
+        #     first_half_dates[self.look_back :],
+        #     y_first,
+        #     first_half_predictions,
+        #     extended_second_half_dates,
+        #     # second_half_target,
+        #     extended_second_half_true,
+        #     second_half_predictions,
+        # )
 
 
 
@@ -448,10 +441,12 @@ class Model:
     def build_lstm_model(self, input_shape):
         model = Sequential()
 
-        if self.lstm_version == 2:
-            model = self.get_model_v2(model, input_shape)
-        elif self.lstm_version == 1:
+        if self.lstm_version == 1:
             model = self.get_model_v1(model, input_shape)
+        elif self.lstm_version == 2:
+            model = self.get_model_v2(model, input_shape)
+        elif self.lstm_version == 3:
+            model = self.get_model_v3(model, input_shape)
 
         self.model = model
 
@@ -470,12 +465,12 @@ class Model:
 
     @staticmethod
     def get_model_v2(model, input_shape):
-        model.add(
-            LSTM(100, return_sequences=True, input_shape=input_shape, activation="tanh")
-        )
+        model.add(LSTM(100, return_sequences=True, input_shape=input_shape, activation="tanh"))
         model.add(Dropout(0.2))
+
         model.add(LSTM(100, return_sequences=False, activation="tanh"))
         model.add(Dropout(0.2))
+
         model.add(Dense(50, activation="relu"))
         model.add(Dense(1, activation="linear"))
 
@@ -489,6 +484,27 @@ class Model:
 
     @staticmethod
     def get_model_v3(model, input_shape):
+        model.add(LSTM(100, return_sequences=True, input_shape=input_shape, activation="tanh"))
+        model.add(LayerNormalization())
+        model.add(LeakyReLU(alpha=0.1))
+        model.add(Dropout(0.2))
+
+        model.add(LSTM(100, return_sequences=False, activation="tanh"))
+        # model.add(BatchNormalization())
+        model.add(LeakyReLU(alpha=0.1))
+        model.add(Dropout(0.2))
+        
+        model.add(Dense(100, activation="relu"))
+        model.add(LeakyReLU(alpha=0.1))
+        model.add(Dense(50, activation="relu"))
+        model.add(Dense(1, activation="linear"))
+
+        optimizer = Adam(
+            # learning_rate=0.0001
+        )
+
+        model.compile(optimizer=optimizer, loss="mean_squared_error", metrics=["mae"])
+
         return model
 
 

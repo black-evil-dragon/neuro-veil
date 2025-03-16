@@ -1,2 +1,2 @@
-from .proccessor import DataProcessor
-from .fetcher import DataFetcher
+from .common import InstrumentDataModel
+from .tinkoff import TinkoffDataModel

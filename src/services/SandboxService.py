@@ -2,6 +2,8 @@
 
 import json
 
+from services import TinkoffService
+
 
 class SandboxService:
 
@@ -13,7 +15,7 @@ class SandboxService:
         ALL = "ACCOUNT_STATUS_ALL"
 
 
-    def __init__(self, service):
+    def __init__(self, service: TinkoffService):
         service.name = 'SandboxService'
         self.manager = service
 

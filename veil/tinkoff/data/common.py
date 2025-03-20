@@ -13,6 +13,7 @@ from veil.utils.numbers import parse_quotation
 
 from veil.tinkoff.services import InstrumentsService, TinkoffService
 from veil.tinkoff.services import MarketDataService
+from veil.utils.time import now
 
 
 log = get_logger()
@@ -49,6 +50,38 @@ class InstrumentDataModel:
     def get_name(self):
         """Метод должен быть реализован в дочерних классах."""
         pass
+
+    def update_data(
+        self,
+        initial_data: dict,
+        candleIntervalType: str,
+        indicatorIntervalType: str,
+        additional_instruments: list = None,
+    ):
+        try:
+            last_date = datetime.strptime(
+                list(initial_data.keys())[-1], "%Y-%m-%dT%H:%M:%SZ"
+            ).replace(tzinfo=timezone.utc)
+
+            new_data = self.get_data(
+                from_date=last_date,
+                to_date=now(),
+                candleIntervalType=candleIntervalType,
+                indicatorIntervalType=indicatorIntervalType,
+                additional_instruments=additional_instruments,
+            )
+
+            updated_data = initial_data | new_data
+
+            log.info('Данные инструмента обновлены')
+        
+        except Exception:
+            log.exception("Ошибка при получении даты последнего элемента")
+            exit()
+
+        return updated_data
+
+
 
     def get_additional_candles(
         self,
@@ -232,7 +265,7 @@ class InstrumentDataModel:
 
 
     @classmethod
-    def load_from_json(cls, filename: str):
+    def load_from_json(cls, filename: str) -> dict:
         """
         Загружает данные из JSON файла.
 

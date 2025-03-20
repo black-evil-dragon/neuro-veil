@@ -1,8 +1,14 @@
-# tbank-bot
+# Вуаль (Veil)
+## Pet-проект
+* Рассчетно-графическая работа
+* Изучение разработки нейронных сетей
+* Разработка торгового помощника (робота)
 
-Установите NumPy версии 1.x:
 
-pip install "numpy<2"
-
-Проверьте, что TensorFlow работает:
-python -c "import tensorflow as tf; print(tf.config.list_physical_devices('GPU'))"
+### Структура
+- tinkoff
+- - data
+- - services
+- - session
+- neuro
+- utils

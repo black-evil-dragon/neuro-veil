@@ -1,4 +1,4 @@
-from session import Session
+from veil.tinkoff.session import Session
 
 
 class TinkoffService:

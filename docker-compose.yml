@@ -4,8 +4,8 @@ services:
     build: ./src
     command: python main.py
     volumes:
-      - .:/app  # Монтируем текущую директорию в /app внутри контейнера
-      - ./output:/app/output  # Монтируем директорию для сохранения модели и других файлов
+      - .:/app
+      - ./output:/app/output
     working_dir: /app
     runtime: nvidia
     environment:

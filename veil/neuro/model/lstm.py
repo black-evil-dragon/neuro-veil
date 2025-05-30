@@ -1,8 +1,8 @@
-
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from sklearn.model_selection import TimeSeriesSplit
 
+import tensorflow
 
 from keras.models import Sequential
 from keras.layers import LSTM
@@ -14,15 +14,7 @@ from keras.mixed_precision import set_global_policy
 from keras.optimizers import Adam
 from keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint, TensorBoard
 
-
-import tensorflow as tf
-import numpy as np
-import pandas as pd
 import logging
-import os
-import matplotlib.pyplot as plt
-import pickle
-import seaborn as sns
 
 
 

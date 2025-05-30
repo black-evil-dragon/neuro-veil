@@ -35,6 +35,8 @@ class Manager:
         "SMA_14",
         "SMA_56",
         "MACD_12_26_9",
+
+        "keyRate"
     ]
 
     # Variables
@@ -147,34 +149,48 @@ if __name__ == "__main__":
     tinkoff_data = InstrumentDataModel.load_from_json(filename="tbank/full.json")
     
     # Update data
-    tinkoff_data = manager.tinkoffDataModel.update_data(
-        initial_data=tinkoff_data,
-        **GET_DATA_ARGS
+    # tinkoff_data = manager.tinkoffDataModel.update_data(
+    #     initial_data=tinkoff_data,
+    #     **GET_DATA_ARGS
+    # )
+
+    tinkoff_data = InstrumentDataModel.add_additional_data(
+        tinkoff_data,
+        InstrumentDataModel.load_from_json(filename="tbank/cb.json")
     )
 
 
 
     log.debug(f"Итого данных: {len(tinkoff_data)} ({tbank.get('ticker')})")
-    exit()
+    
     # *|____________________________________________________________________________|
 
 
 
     # *______________________________________________________________________________
     # *| Train model                                                                 |
-    # manager.model.set_batch_size(64)
-    # manager.model.set_epochs(50)
-    # manager.model.set_look_back(96)
-    # manager.model.set_model_version(4)
 
+    manager.model.set_batch_size(64)
+    manager.model.set_epochs(10)
+    manager.model.set_look_back(96)
+
+    manager.model.SHOW_GRAPHICS = False
     manager.model.train(
         train_data=tinkoff_data,
         features=manager.features
     )
+    # manager.model.load(name='tbank_lb_96_bs_64_eps_40_v_3', extension='keras', test=True, scaler_name='scaler_minmax')
+
+
+    print(manager.model.predict(
+        train_data=tinkoff_data,
+    ))
+
+
 
     # *|____________________________________________________________________________
 
-    # exit()
+    
 
     # *______________________________________________________________________________
     # *| Test models                                                                |

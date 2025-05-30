@@ -80,7 +80,24 @@ class InstrumentDataModel:
             exit()
 
         return updated_data
+    
 
+
+    def add_additional_data(existing_data, additional_data):
+        for item in additional_data:
+
+            date = datetime.strptime(item["Date"], "%m.%d.%Y")
+            simple_date = date.strftime("%Y-%m-%d")  # Без времени
+            
+            for existing_date in existing_data.keys():
+                if existing_date.startswith(simple_date):
+                    existing_data[existing_date]["keyRate"] = item["Value"]
+            
+            # if not found:
+            #     iso_date = date.strftime("%Y-%m-%dT00:00:00Z")
+            #     existing_data[iso_date] = {"keyRate": item["Value"]}
+
+        return existing_data
 
 
     def get_additional_candles(

@@ -4,16 +4,11 @@ from sklearn.model_selection import TimeSeriesSplit
 
 
 from keras.models import Sequential
-from keras.layers import LSTM
-from keras.layers import Dense
-from keras.layers import Dropout
-from keras.layers import LeakyReLU, LayerNormalization, BatchNormalization, Attention, Concatenate, Bidirectional
-from keras.layers import Input
 
 
 from keras.mixed_precision import set_global_policy
-from keras.optimizers import Adam
-from keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint, TensorBoard
+
+from keras.callbacks import EarlyStopping, ReduceLROnPlateau
 
 
 import tensorflow as tf
@@ -136,6 +131,30 @@ class NeuroModel:
     #* |________________________________________________________________________|
 
 
+    def predict(self, train_data, last=500, steps=1):
+        # Получаем последние last наблюдений
+        df = InstrumentDataModel.dict_to_dataframe(data=train_data)[-last:]
+        if self.prototype.model is None:
+            log.warning("Модель не загружена. Используйте метод load() для загрузки модели.")
+            return None
+
+        log.info("Начало предсказания")
+
+        data = df[self.features].values
+        target = df[self.target].values
+
+        # Нормализация данных
+        normalized_data, normalized_target = self.normalize_data(data, target)
+
+
+        X, _ = self.create_sequences(normalized_data, normalized_target, self.look_back)
+
+        log.debug(f"Данные подготовлены для предсказания. Форма X: {X.shape}")
+        y_pred = self.prototype.model.predict(X)
+
+        log.info("Предсказание завершено")
+        return y_pred
+
     #* __________________________________________________________________________
     #* | Обучение                                                                |
     def train(self, train_data, features):
@@ -190,6 +209,7 @@ class NeuroModel:
 
             callbacks=self.callbacks,
         )
+        self.prototype.model = model
         log.info("Обучение завершено")
 
 
@@ -257,11 +277,13 @@ class NeuroModel:
 
             # plt.savefig(f'./tests/lb{self.look_back}_bs{self.batch_size}_ep{self.epochs}_{self.version}.png')
             plt.close()
+    #* |__________________________________________________________________________
+
 
 
     #* __________________________________________________________________________
     #* | Базовый метод                                                           |
-    #? | Нужен для                                                          |
+    #? | ...                                                                     |
     def build_model(self, input_shape):
         return Sequential()
 
@@ -292,7 +314,7 @@ class NeuroModel:
         plt.show()
 
 
-    def load(self, model=None, name: str = None, extension: str = None, test: bool = False) -> bool:
+    def load(self, model=None, name: str = None, extension: str = None, test: bool = False, scaler_name: str = '') -> bool:
         if model is not None:
             log.info(f"Загрузка модели: {model}")
             self.model = model
@@ -301,12 +323,12 @@ class NeuroModel:
             log.info(f"Загрузка модели: {path}")
             self.model = tf.keras.models.load_model(path)
 
-            # Загрузка scaler_minmax
-            scaler_path = f"./output/models/{name}/{'test' if test else ''}/scaler.pkl"
+            # Загрузка scaler
+            scaler_path = f"./output/models/{name}/{'test' if test else ''}/{scaler_name}.pkl"
             if os.path.exists(scaler_path):
                 with open(scaler_path, "rb") as f:
-                    self.scaler_minmax = pickle.load(f)
-                log.info("scaler_minmax успешно загружен")
+                    self.scaler = pickle.load(f)
+                log.info("scaler успешно загружен")
             else:
                 log.warning("Файл scaler.pkl не найден. scaler не загружен.")
         else:
@@ -317,7 +339,7 @@ class NeuroModel:
         return True
 
 
-    def save(self, name: str, model=None, test=False):
+    def save(self, name: str, model=None, test=False, scaler_name=''):
         path = f"./output/models/{name}/{'test' if test else ''}/"
         os.makedirs(path, exist_ok=True)
 
@@ -335,12 +357,11 @@ class NeuroModel:
 
 
         if hasattr(self, 'scaler'):
-            with open(f"{path}scaler.pkl", "wb") as f:
+            with open(f"{path}{scaler_name}.pkl", "wb") as f:
                 pickle.dump(self.scaler, f)
-            log.info("scaler_minmax успешно сохранен")
+            log.info("scaler успешно сохранен")
         else:
             log.warning("scaler не найден. Сохранение scaler пропущено.")
 
         log.info("Модель и scaler успешно сохранены")
-    #* |
     #* |_________________________________________________________________________|

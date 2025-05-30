@@ -5,6 +5,8 @@ from keras.models import Sequential
 
 class InterfaceModel:
 
+    model = None
+
     def __str__(self):
         return ''
 
